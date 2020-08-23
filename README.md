@@ -2,3 +2,61 @@
 
 
 通过系统调用的方式实现Windows系统的代理配置。
+
+
+修改自 C++项目,`sysproxy.exe`
+
+- [Noisyfox/sysproxy](https://github.com/Noisyfox/sysproxy)
+
+
+## Quick Start
+
+获取
+```
+go get -u github.com/Trisia/gosysproxy
+```
+
+API
+```go
+// SetPAC 设置PAC代理模式
+// scriptLoc: 脚本地址，如: "http://127.0.0.1:7777/pac"
+func SetPAC(scriptLoc string)
+
+// SetGlobalProxy 设置全局代理
+// proxyServer: 代理服务器host:port，例如: "127.0.0.1:7890"
+// bypass: 忽略代理列表,这些配置项开头的地址不进行代理
+func SetGlobalProxy(proxyServer string, bypasses ...string) error
+
+// Off 关闭代理
+func Off() error
+
+// Flush 更新系统配置使生效
+func Flush()
+```
+
+## Demo
+
+```go
+package main
+
+import (
+	"github.com/Trisia/gosysproxy"
+	"time"
+)
+
+func main() {
+    // 设置全局代理
+    err := gosysproxy.SetGlobalProxy("127.0.0.1:7890")
+    if err{
+        panic(err)
+    }
+    
+    time.Sleep(time.Second * 60)
+    
+    err := gosysproxy.Off()
+    if err{
+        panic(err)
+    }
+}
+
+```
