@@ -1,13 +1,9 @@
 # Go System Proxy Windows系统代理配置
 
+[![Documentation](https://godoc.org/github.com/Trisia/gosysproxy?status.svg)](https://pkg.go.dev/github.com/Trisia/gosysproxy)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/Trisia/gosysproxy)
 
-通过系统调用的方式实现Windows系统的代理配置。
-
-
-修改自 C++项目,`sysproxy.exe`
-
-- [Noisyfox/sysproxy](https://github.com/Noisyfox/sysproxy)
-
+通过系统调用的方式实现Windows系统的代理配置、状态查询。
 
 ## Quick Start
 
@@ -32,7 +28,12 @@ func Off() error
 
 // Flush 更新系统配置使生效
 func Flush()
+
+// Status 获取当前系统代理配置
+func Status() (*ProxyStatus, error)
 ```
+
+详见： [《Go System Proxy 接口文档》](https://pkg.go.dev/github.com/Trisia/gosysproxy)
 
 ## Demo
 
@@ -58,5 +59,11 @@ func main() {
         panic(err)
     }
 }
-
 ```
+
+完整示例详见： [main_test.go](main_test.go)
+
+
+## 致谢
+
+- [Noisyfox/sysproxy](https://github.com/Noisyfox/sysproxy)

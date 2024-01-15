@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 // windows系统代理配置
@@ -15,12 +16,15 @@ import (
 var (
 	wininet, _           = syscall.LoadLibrary("Wininet.dll")
 	internetSetOption, _ = syscall.GetProcAddress(wininet, "InternetSetOptionW")
+	// https://learn.microsoft.com/zh-cn/windows/win32/api/wininet/nf-wininet-internetqueryoptionw
+	internetQueryOption, _ = syscall.GetProcAddress(wininet, "InternetQueryOptionA")
 )
 
 const (
 	_INTERNET_OPTION_PER_CONNECTION_OPTION  = 75
 	_INTERNET_OPTION_PROXY_SETTINGS_CHANGED = 95
 	_INTERNET_OPTION_REFRESH                = 37
+	_INTERNET_OPTION_PROXY                  = 38
 )
 
 const (
@@ -43,6 +47,12 @@ const (
 	_INTERNET_PER_CONN_FLAGS_UI                     = 10
 )
 
+const (
+	INTERNET_OPEN_TYPE_PRECONFIG = 0 // use registry configuration
+	INTERNET_OPEN_TYPE_DIRECT    = 1 // 禁用代理 direct to net
+	INTERNET_OPEN_TYPE_PROXY     = 3 // 启用代理 via named proxy
+)
+
 type internetPerConnOptionList struct {
 	dwSize        uint32
 	pszConnection *uint16
@@ -54,6 +64,30 @@ type internetPerConnOptionList struct {
 type internetPreConnOption struct {
 	dwOption uint32
 	value    uint64
+}
+
+// internetProxyInfo https://learn.microsoft.com/zh-cn/windows/win32/api/wininet/ns-wininet-internet_proxy_info
+type internetProxyInfo struct {
+	dwAccessType    uint32
+	lpszProxy       *uint16
+	lpszProxyBypass *uint16
+}
+
+type ProxyStatus struct {
+	// 代理类型
+	// - 0: INTERNET_OPEN_TYPE_PRECONFIG: use registry configuration
+	// - 1: INTERNET_OPEN_TYPE_DIRECT: 不代理 direct to net
+	// - 3: INTERNET_OPEN_TYPE_PROXY: 使用代理服务器 via named proxy
+	Type  uint32
+	Proxy string // 代理IP地址与端口，IP:Port，例如："127.0.0.1:7890"
+	// 请勿对以下列条目开头的地址使用代理服务器
+	// 注意：
+	// - 这里的地址是ASCII编码
+	// - "<local>" 表示 本地(Intranet)地址，如果包含 "<local>" 则 DisableProxyIntranet 为 true
+	//
+	// 例如：["localhost","127.*"]，
+	Bypass               []string
+	DisableProxyIntranet bool // 请勿将代理服务器用于本地(Intranet)地址
 }
 
 // stringPtrAddr 获取C字符串(UTF16)的数组第一个位置的地址
@@ -114,8 +148,8 @@ func SetPAC(scriptLoc string) error {
 }
 
 // SetGlobalProxy 设置全局代理
-// proxyServer: 代理服务器host:port，例如: "127.0.0.1:7890"
-// bypass: 忽略代理列表,这些配置项开头的地址不进行代理
+// - proxyServer: 代理服务器 host:port，例如: "127.0.0.1:7890"
+// - bypass: 忽略代理列表,这些配置项开头的地址不进行代理，若包含 "<local>" 则 ”请勿将代理服务器用于本地(Intranet)地址“ 将勾选。
 func SetGlobalProxy(proxyServer string, bypasses ...string) error {
 	if proxyServer == "" {
 		return errors.New("代理服务器(proxyServer)配置为空")
@@ -209,4 +243,51 @@ func Flush() error {
 		return errors.New(fmt.Sprintf("%s", infoPtr))
 	}
 	return nil
+}
+
+// Status 获取当前系统代理配置
+func Status() (*ProxyStatus, error) {
+	var bufferLength uint32 = 1024 * 10
+	buffer := make([]byte, bufferLength)
+	ret, _, infoPtr := syscall.Syscall6(internetQueryOption,
+		4,
+		0,
+		_INTERNET_OPTION_PROXY,
+		uintptr(unsafe.Pointer(&buffer[0])), uintptr(unsafe.Pointer(&bufferLength)),
+		0, 0)
+	if ret != 1 {
+		return nil, errors.New(fmt.Sprintf("%s", infoPtr))
+	}
+	//fmt.Println(hex.Dump(buffer[:bufferLength]))
+	proxyInfo := (*internetProxyInfo)(unsafe.Pointer(&buffer[0]))
+	res := &ProxyStatus{
+		Type:  proxyInfo.dwAccessType,
+		Proxy: asciiPtrToString(proxyInfo.lpszProxy),
+	}
+	bypassArr := asciiPtrToString(proxyInfo.lpszProxyBypass)
+	res.Bypass = strings.SplitN(bypassArr, " ", -1)
+	for _, bypass := range res.Bypass {
+		if bypass == "<local>" {
+			res.DisableProxyIntranet = true
+			break
+		}
+	}
+	return res, nil
+}
+
+// ASCIIPtrToString 将UTF16指针转换为ASCII字符串
+func asciiPtrToString(p *uint16) string {
+	if p == nil {
+		return ""
+	}
+	res := []byte{}
+	end := unsafe.Pointer(p)
+	for {
+		if *(*uint8)(end) == 0 {
+			break
+		}
+		res = append(res, *(*uint8)(end))
+		end = unsafe.Pointer(uintptr(end) + 1)
+	}
+	return string(res)
 }
